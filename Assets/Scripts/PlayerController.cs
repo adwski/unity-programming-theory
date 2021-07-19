@@ -1,5 +1,3 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
 public class PlayerController : MonoBehaviour
@@ -7,29 +5,46 @@ public class PlayerController : MonoBehaviour
 
     [SerializeField] float speed = 5.0f;
     [SerializeField] float turnSmoothTime = 0.1f;
-    [SerializeField] float jumpSpeed = 10.0f;
-    [SerializeField] float gravity = 10f;
+    [SerializeField] float jumpForce = 10.0f;
     [SerializeField] Transform playerCamera;
-    [SerializeField] GameObject playerObject;
+    [SerializeField] Animator playerAnimator;
 
     CharacterController characterController;
-    Animator playerAnimator;
+    Rigidbody playerRb;
 
     float turnSmothVelocity;
-    float directionY = 0f;
+
+    public bool IsOnGround;
+    public Vector3 moveDirection;
+    public Vector3 externalPosition;
 
     // Start is called before the first frame update
     void Start()
     {
-        playerAnimator = playerObject.GetComponent<Animator>();
+        playerRb = GetComponent<Rigidbody>();
         characterController = GetComponent<CharacterController>();
-        characterController.detectCollisions = true;
+        if (characterController != null)
+        {
+            characterController.detectCollisions = true;
+        }
     }
 
     // Update is called once per frame
     void Update()
     {
         Move();
+        if (IsOnGround)
+        {
+            JumpChecker(moveDirection / 2f);
+        }
+    }
+
+    void FixedUpdate()
+    {
+        if (IsOnGround)
+        {
+            playerRb.MovePosition(playerRb.position + moveDirection * speed * Time.deltaTime);
+        }
     }
 
     void Move()
@@ -39,7 +54,7 @@ public class PlayerController : MonoBehaviour
         float horizontalInput = Input.GetAxisRaw("Horizontal");
 
         // Init move vector
-        Vector3 moveDirection = new Vector3(0f, 0f, 0f);
+        moveDirection = new Vector3(0f, 0f, 0f);
 
         // Calculate movement direction based on input axis and camera look
         if (verticalInput != 0 || horizontalInput != 0)
@@ -47,8 +62,7 @@ public class PlayerController : MonoBehaviour
             Vector3 direction = new Vector3(horizontalInput, 0, verticalInput).normalized;
             float lookAngle = Mathf.Atan2(direction.x, direction.z) * Mathf.Rad2Deg + playerCamera.eulerAngles.y;
             float smoothAngle = Mathf.SmoothDampAngle(transform.eulerAngles.y, lookAngle, ref turnSmothVelocity, turnSmoothTime);
-            moveDirection = (Quaternion.Euler(0f, lookAngle, 0f) * Vector3.forward).normalized * speed;
-            
+            moveDirection = (Quaternion.Euler(0f, lookAngle, 0f) * Vector3.forward).normalized;
             transform.rotation = Quaternion.Euler(0f, smoothAngle, 0f);
 
             // Trigger running animation
@@ -59,34 +73,71 @@ public class PlayerController : MonoBehaviour
             playerAnimator.SetFloat("MoveSpeed", 0f);
         }
 
-        // Get vertical direction in case of jump
-        moveDirection.y = GetJumpDirection();
-
-        // Move character
-        characterController.Move(moveDirection * Time.deltaTime);
     }
 
-    float GetJumpDirection()
+    private void OnTriggerStay(Collider other)
     {
-        if (characterController.isGrounded)
+        if (other.gameObject.CompareTag("Platform"))
         {
+            playerRb.MovePosition(playerRb.position + other.attachedRigidbody.position - externalPosition);
+            externalPosition = other.attachedRigidbody.position;
+        }
+    }
 
+    private void OnTriggerEnter(Collider other)
+    {
+        if (other.gameObject.CompareTag("Platform"))
+        {
+            externalPosition = other.attachedRigidbody.position;
+            Debug.Log("Player is on the platform");
+        }
+    }
+
+    private void OnTriggerExit(Collider other)
+    {
+        if (other.gameObject.CompareTag("Platform"))
+        {
+            Debug.Log("Player left the platform");
+        }
+    }
+
+    private void OnCollisionStay(Collision collision)
+    {
+        if (collision.gameObject.CompareTag("Ground") || collision.gameObject.CompareTag("Platform"))
+        {
             playerAnimator.SetBool("Grounded", true);
-
-            if (Input.GetKeyDown(KeyCode.Space))
-            {
-                // Set jump speed
-                directionY = jumpSpeed;
-                // Trigger jump animation
-                playerAnimator.SetBool("Grounded", false);
-            }
+            IsOnGround = true;
         }
-        else
+    }
+
+    private void OnCollisionExit(Collision collision)
+    {
+        if (collision.gameObject.CompareTag("Ground") || collision.gameObject.CompareTag("Platform"))
         {
-            // Decrease vertical movement 
-            directionY -= gravity * Time.deltaTime;
+            playerAnimator.SetBool("Grounded", false);
+            IsOnGround = false;
         }
+    }
 
-        return directionY;
+    void JumpChecker(Vector3 direction)
+    {
+        if (Input.GetKeyDown(KeyCode.Space))
+        { 
+            // Trigger jump animation
+            playerAnimator.SetBool("Grounded", false);
+
+            // Jump
+            Jump(direction);
+
+            IsOnGround = false;
+        }
+    }
+
+    void Jump(Vector3 direction)
+    {
+        // Add jump force
+        Vector3 force = (Vector3.up + direction).normalized * jumpForce;
+        playerRb.AddForce(force, ForceMode.Impulse);
+        Debug.Log("Jumping with force: " + force);
     }
 }
